@@ -1,0 +1,55 @@
+version: '3.8'
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8081:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - PUBLIC_URL=/
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - ONLYFANS_BASE_URL=${ONLYFANS_BASE_URL}
+      - ONLYFANS_CLIENT_ID=${ONLYFANS_CLIENT_ID}
+      - ONLYFANS_CLIENT_SECRET=${ONLYFANS_CLIENT_SECRET}
+      - ONLYFANS_ACCESS_TOKEN=${ONLYFANS_ACCESS_TOKEN}
+      - ONLYFANS_USERNAME=${ONLYFANS_USERNAME}
+      - ONLYFANS_PASSWORD=${ONLYFANS_PASSWORD}
+    ports:
+      - "4000:4000"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=lumina
+      - POSTGRES_USER=lumina
+      - POSTGRES_PASSWORD=lumina
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  db_data:
