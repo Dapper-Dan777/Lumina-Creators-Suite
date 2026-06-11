@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * Öffentliche URL ohne Vercel — Docker + DuckDNS + Cloudflare HTTPS-Tunnel.
+ * Lumina öffentlich machen — Docker + Cloudflare Tunnel (HTTPS, kostenlos).
  *
  *   npm run public
+ *   npm run tunnel   (alias)
  *
- * .env (optional DuckDNS):
- *   DUCKDNS_DOMAIN=lumina
- *   DUCKDNS_TOKEN=dein-token
+ * Terminal offen lassen! URL in .env:
+ *   CAPACITOR_SERVER_URL=https://....trycloudflare.com
  */
 import { spawn, execSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,24 +17,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const bundledCloudflared = path.join(__dirname, "cloudflared");
 const PORT = 8081;
 const LOCAL = `http://127.0.0.1:${PORT}`;
-
-function loadEnv() {
-  const env = { ...process.env };
-  if (!existsSync(".env")) return env;
-  for (const line of readFileSync(".env", "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const idx = trimmed.indexOf("=");
-    if (idx === -1) continue;
-    const key = trimmed.slice(0, idx).trim();
-    let val = trimmed.slice(idx + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-      val = val.slice(1, -1);
-    }
-    env[key] = val;
-  }
-  return env;
-}
 
 function run(cmd, opts = {}) {
   return execSync(cmd, { stdio: "inherit", ...opts });
@@ -96,7 +78,7 @@ async function ensureDocker() {
   }
 
   if (await isDockerHealthy()) {
-    console.log("\n✓ Docker läuft bereits — kein Rebuild nötig\n");
+    console.log("\n✓ Docker läuft bereits\n");
     return;
   }
 
@@ -105,60 +87,48 @@ async function ensureDocker() {
     run("docker compose up -d");
     if (await waitForApp(45_000)) return;
   } catch {
-    // containers missing — build images
+    // build on first run
   }
 
   console.log("🔨 Erster Start — baue Docker-Images (einmalig)…\n");
   run("docker compose up -d --build");
 }
 
-async function updateDuckDns(env) {
-  const domain = env.DUCKDNS_DOMAIN?.trim();
-  const token = env.DUCKDNS_TOKEN?.trim();
-  if (!domain || !token) {
-    console.log("💡 DuckDNS (optional): In .env eintragen:\n");
-    console.log("   DUCKDNS_DOMAIN=lumina");
-    console.log("   DUCKDNS_TOKEN=dein-token-von-duckdns.org\n");
-    return null;
-  }
+function saveTunnelUrl(url) {
+  writeFileSync(".tunnel-url", `${url}\n`, "utf8");
 
-  const res = await fetch(
-    `https://www.duckdns.org/update?domains=${encodeURIComponent(domain)}&token=${encodeURIComponent(token)}&ip=`,
-  );
-  const text = (await res.text()).trim();
-  if (text !== "OK") {
-    console.warn(`⚠ DuckDNS Update fehlgeschlagen: ${text}\n`);
-    return null;
+  if (!existsSync(".env")) return;
+  const env = readFileSync(".env", "utf8");
+  const line = `CAPACITOR_SERVER_URL=${url}`;
+  if (/^CAPACITOR_SERVER_URL=/m.test(env)) {
+    writeFileSync(".env", env.replace(/^CAPACITOR_SERVER_URL=.*$/m, line), "utf8");
+  } else {
+    writeFileSync(".env", `${env.trimEnd()}\n${line}\n`, "utf8");
   }
-
-  const duckUrl = `http://${domain}.duckdns.org:${PORT}`;
-  console.log(`✓ DuckDNS aktualisiert: ${duckUrl}`);
-  console.log("  Router: Port 8081 auf deinen Mac weiterleiten (Fritzbox/Portfreigabe)\n");
-  return duckUrl;
+  console.log("✓ CAPACITOR_SERVER_URL in .env gespeichert\n");
 }
 
 async function main() {
-  const env = loadEnv();
   const cloudflared = findCloudflared();
   if (!cloudflared) {
     console.error("\n❌ cloudflared konnte nicht geladen werden.\n");
     process.exit(1);
   }
 
+  console.log("\n☁️  Lumina — Cloudflare Tunnel\n");
+
   await ensureDocker();
 
-  console.log("⏳ Warte auf App…");
+  console.log("⏳ Warte auf API…");
   const ready = await waitForApp();
   if (!ready) {
-    console.error(`\n❌ App antwortet nicht auf ${LOCAL}/api/creators\n`);
+    console.error(`\n❌ Keine Antwort von ${LOCAL}/api/creators\n`);
+    console.error("   Tipp: docker compose logs api\n");
     process.exit(1);
   }
-  console.log(`✓ Lokal OK: ${LOCAL}/api/creators\n`);
+  console.log(`✓ API OK: ${LOCAL}/api/creators\n`);
 
-  await updateDuckDns(env);
-
-  console.log("🌐 Starte HTTPS-Tunnel (Cloudflare, kostenlos)…\n");
-  console.log("   → Für TestFlight/iPhone brauchst du HTTPS (DuckDNS allein reicht nicht)\n");
+  console.log("🌐 Starte HTTPS-Tunnel…\n");
 
   const child = spawn(cloudflared, ["tunnel", "--url", LOCAL], {
     stdio: ["ignore", "pipe", "pipe"],
@@ -172,14 +142,15 @@ async function main() {
     const match = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
     if (match && !tunnelUrl) {
       tunnelUrl = match[0];
+      saveTunnelUrl(tunnelUrl);
       console.log("\n" + "=".repeat(60));
-      console.log("\n✅ HTTPS-URL für TestFlight / iPhone:\n");
+      console.log("\n✅ Deine öffentliche URL:\n");
       console.log(`   ${tunnelUrl}\n`);
-      console.log("In .env eintragen:\n");
-      console.log(`   CAPACITOR_SERVER_URL=${tunnelUrl}\n`);
-      console.log("Test im Browser:");
+      console.log("Test:");
       console.log(`   ${tunnelUrl}/api/creators\n`);
-      console.log("Tunnel-Fenster offen lassen! Beenden mit Ctrl+C.\n");
+      console.log("TestFlight:");
+      console.log("   npm run mobile:prepare:release\n");
+      console.log("⚠️  Terminal offen lassen — Tunnel stoppt bei Ctrl+C\n");
       console.log("=".repeat(60) + "\n");
     }
   };

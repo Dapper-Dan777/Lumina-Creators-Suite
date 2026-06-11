@@ -40,6 +40,7 @@ android/
 # Tunnel binary (auto-downloaded)
 scripts/cloudflared
 scripts/.cloudflared.tgz
+.tunnel-url
 
 # SQLite
 server/data/*.db
