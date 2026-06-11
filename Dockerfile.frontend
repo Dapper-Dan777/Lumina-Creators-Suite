@@ -1,5 +1,7 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
+ARG API_PROXY_TARGET=http://api:4000
+ENV API_PROXY_TARGET=$API_PROXY_TARGET
 COPY package.json package-lock.json ./
 RUN npm ci --silent
 COPY . .
@@ -7,9 +9,8 @@ RUN npm run build
 
 FROM node:22-alpine
 WORKDIR /app
-COPY --from=builder /app/dist /app/dist
-COPY package.json package-lock.json ./
-RUN npm ci --production --silent
-EXPOSE 8080
+COPY --from=builder /app/.output /app/.output
 ENV NODE_ENV=production
-CMD ["npm", "run", "preview", "--", "--port", "8080", "--host"]
+ENV PORT=8080
+EXPOSE 8080
+CMD ["node", ".output/server/index.mjs"]

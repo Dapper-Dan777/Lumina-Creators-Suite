@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TeamRouteImport } from './routes/team'
 import { Route as StudioRouteImport } from './routes/studio'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ScoutRouteImport } from './routes/scout'
 import { Route as MessagingRouteImport } from './routes/messaging'
 import { Route as FinanceRouteImport } from './routes/finance'
 import { Route as CreatorsRouteImport } from './routes/creators'
@@ -32,6 +33,11 @@ const StudioRoute = StudioRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScoutRoute = ScoutRouteImport.update({
+  id: '/scout',
+  path: '/scout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MessagingRoute = MessagingRouteImport.update({
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/creators': typeof CreatorsRoute
   '/finance': typeof FinanceRoute
   '/messaging': typeof MessagingRoute
+  '/scout': typeof ScoutRoute
   '/settings': typeof SettingsRoute
   '/studio': typeof StudioRoute
   '/team': typeof TeamRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/creators': typeof CreatorsRoute
   '/finance': typeof FinanceRoute
   '/messaging': typeof MessagingRoute
+  '/scout': typeof ScoutRoute
   '/settings': typeof SettingsRoute
   '/studio': typeof StudioRoute
   '/team': typeof TeamRoute
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/creators': typeof CreatorsRoute
   '/finance': typeof FinanceRoute
   '/messaging': typeof MessagingRoute
+  '/scout': typeof ScoutRoute
   '/settings': typeof SettingsRoute
   '/studio': typeof StudioRoute
   '/team': typeof TeamRoute
@@ -108,6 +117,7 @@ export interface FileRouteTypes {
     | '/creators'
     | '/finance'
     | '/messaging'
+    | '/scout'
     | '/settings'
     | '/studio'
     | '/team'
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/creators'
     | '/finance'
     | '/messaging'
+    | '/scout'
     | '/settings'
     | '/studio'
     | '/team'
@@ -130,6 +141,7 @@ export interface FileRouteTypes {
     | '/creators'
     | '/finance'
     | '/messaging'
+    | '/scout'
     | '/settings'
     | '/studio'
     | '/team'
@@ -142,6 +154,7 @@ export interface RootRouteChildren {
   CreatorsRoute: typeof CreatorsRoute
   FinanceRoute: typeof FinanceRoute
   MessagingRoute: typeof MessagingRoute
+  ScoutRoute: typeof ScoutRoute
   SettingsRoute: typeof SettingsRoute
   StudioRoute: typeof StudioRoute
   TeamRoute: typeof TeamRoute
@@ -168,6 +181,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scout': {
+      id: '/scout'
+      path: '/scout'
+      fullPath: '/scout'
+      preLoaderRoute: typeof ScoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/messaging': {
@@ -222,6 +242,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreatorsRoute: CreatorsRoute,
   FinanceRoute: FinanceRoute,
   MessagingRoute: MessagingRoute,
+  ScoutRoute: ScoutRoute,
   SettingsRoute: SettingsRoute,
   StudioRoute: StudioRoute,
   TeamRoute: TeamRoute,

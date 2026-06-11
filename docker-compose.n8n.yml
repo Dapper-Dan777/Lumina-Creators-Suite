@@ -1,0 +1,40 @@
+# Standalone n8n instance — runs independently from the Lumina app.
+# Start:  docker compose -f docker-compose.n8n.yml up -d
+# Stop:   docker compose -f docker-compose.n8n.yml down
+#
+# The app connects via N8N_BASE_URL (see .env.example).
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: lumina-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PUBLISH_PORT:-5678}:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      - GENERIC_TIMEZONE=${TZ:-Europe/Berlin}
+      - TZ=${TZ:-Europe/Berlin}
+      - N8N_SECURE_COOKIE=false
+      - N8N_PROXY_HOPS=1
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - lumina
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  lumina:
+    name: lumina-network
+    driver: bridge
+
+volumes:
+  n8n_data:

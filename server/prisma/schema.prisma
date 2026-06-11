@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Creator {
+  id             String        @id @default(cuid())
+  name           String
+  handle         String
+  avatar         String        @default("")
+  niche          String
+  status         String        @default("active")
+  revenueShare   Int           @default(70)
+  monthlyRevenue Int           @default(0)
+  monthlyGoal    Int           @default(0)
+  subscribers    Int           @default(0)
+  growth         Float         @default(0)
+  team           Json          @default("[]")
+  joinedAt       String
+  contractEndsAt String
+  notes          String        @default("")
+  trend          Json          @default("[]")
+  onlyfansUrl         String?
+  onlyfansAccountId   String?       @unique
+  onlyfansUsername    String?
+  headerUrl           String?
+  avatarSyncedAt      DateTime?
+  content             ContentItem[]
+  media               MediaAsset[]
+  mediaFolders        MediaFolder[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model ContentItem {
+  id           String    @id @default(cuid())
+  creatorId    String
+  creator      Creator   @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  title        String
+  caption      String    @default("")
+  type         String
+  status       String    @default("draft")
+  scheduledFor DateTime
+  price        Int?
+  cover        String    @default("linear-gradient(135deg,#ec4899,#22d3ee)")
+  publishedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([creatorId, scheduledFor])
+  @@index([status])
+}
+
+model MediaFolder {
+  id        String        @id @default(cuid())
+  creatorId String
+  creator   Creator       @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  name      String
+  parentId  String?
+  parent    MediaFolder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  MediaFolder[] @relation("FolderTree")
+  assets    MediaAsset[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([creatorId, parentId])
+}
+
+model MediaAsset {
+  id        String       @id @default(cuid())
+  creatorId String
+  creator   Creator      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  folderId  String?
+  folder    MediaFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  filename  String
+  url       String
+  mimeType  String       @default("image/jpeg")
+  category  String       @default("feed")
+  title     String       @default("")
+  fileSize  Int          @default(0)
+  width     Int?
+  height    Int?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([creatorId, category])
+  @@index([creatorId, folderId])
+  @@index([createdAt])
+}
+
+model ScoutSearch {
+  id           String      @id @default(cuid())
+  brief        String      @default("")
+  niche        String?
+  region       String?
+  minFollowers Int?
+  maxFollowers Int?
+  ofFilter     String      @default("any")
+  platforms    Json        @default("[]")
+  status       String      @default("pending")
+  resultCount  Int         @default(0)
+  queries      Json        @default("[]")
+  error        String?
+  leads        ScoutLead[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ScoutLead {
+  id            String       @id @default(cuid())
+  searchId      String?
+  search        ScoutSearch? @relation(fields: [searchId], references: [id], onDelete: SetNull)
+  displayName   String
+  handle        String?
+  platform      String
+  profileUrl    String       @unique
+  onlyfansUrl   String?
+  hasOnlyfans   Boolean      @default(false)
+  followers     Int?
+  engagement    Float?
+  niche         String?
+  region        String?
+  score         Int          @default(0)
+  scoreReason   String       @default("")
+  bio           String       @default("")
+  signals       Json         @default("[]")
+  status        String       @default("new")
+  notes         String       @default("")
+  aiSummary     String       @default("")
+  outreachDraft String       @default("")
+  rawData       Json?
+  creatorId     String?
+  lastCheckedAt DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status])
+  @@index([score])
+  @@index([platform])
+  @@index([hasOnlyfans])
+  @@index([searchId])
+}

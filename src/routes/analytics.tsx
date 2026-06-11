@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, Card, Stat, Badge, Btn, Select } from "@/components/AppShell";
-import { useStore, eur } from "@/lib/store";
-import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, LineChart, Line, PieChart, Pie, Cell, Legend } from "recharts";
-import { Download, FileText } from "lucide-react";
+import { CreatorAvatar } from "@/components/CreatorAvatar";
+import { useCreators } from "@/hooks/useCreators";
+import { useOnlyFansStats } from "@/hooks/useOnlyFansStats";
+import { eur, fmt } from "@/lib/store";
+import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, Legend } from "recharts";
+import { Download, FileText, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -17,17 +20,9 @@ export const Route = createFileRoute("/analytics")({
   component: Analytics,
 });
 
-const trend = [
-  { month: "Dez", revenue: 142000 },
-  { month: "Jan", revenue: 156000 },
-  { month: "Feb", revenue: 168000 },
-  { month: "Mär", revenue: 175000 },
-  { month: "Apr", revenue: 182000 },
-  { month: "Mai", revenue: 188580 },
-];
-
 function Analytics() {
-  const creators = useStore((s) => s.creators);
+  const { data: creators = [], isLoading } = useCreators();
+  const { data: ofStats } = useOnlyFansStats();
   const [range, setRange] = useState("30d");
   const [niche, setNiche] = useState("");
 
@@ -64,6 +59,18 @@ function Analytics() {
   };
 
   const niches = Array.from(new Set(creators.map((c) => c.niche)));
+  const liveSubs = ofStats?.connected ? ofStats.subscribersCount : null;
+  const totalSubs = filtered.reduce((s, c) => s + c.subscribers, 0);
+
+  if (isLoading) {
+    return (
+      <AppShell title="Analytics & Reports" subtitle="Lade…">
+        <Card className="p-12 grid place-items-center text-muted-foreground">
+          <Loader2 className="size-8 animate-spin" />
+        </Card>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell
@@ -91,15 +98,18 @@ function Analytics() {
       </Card>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5">
-        <Stat label="Retention Rate" value="87.3%" delta="+2.1% MoM" accent="success" />
-        <Stat label="Avg Revenue / Creator" value={eur(Math.round(avgRev))} delta="+8% MoM" accent="magenta" />
-        <Stat label="Churn Rate" value="4.8%" delta="-0.6% MoM" accent="cyan" />
-        <Stat label="LTV / Subscriber" value={eur(186)} delta="+€12 MoM" accent="warning" />
+        <Stat label="Gesamt-Revenue" value={eur(totalRev)} delta={filtered.length ? `${filtered.length} Creator` : "Keine Daten"} accent="magenta" />
+        <Stat label="Avg Revenue / Creator" value={filtered.length ? eur(Math.round(avgRev)) : "—"} delta={range} accent="magenta" />
+        <Stat label="Subscribers" value={fmt(liveSubs ?? totalSubs)} delta={liveSubs != null ? "live via OnlyFansAPI" : "aus Creator-Daten"} accent="cyan" />
+        <Stat label="Agency Anteil" value={filtered.length ? eur(Math.round(totalRev * 0.3)) : "—"} delta="geschätzt Ø 30%" accent="warning" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
         <Card className="lg:col-span-2 p-5 lg:p-6">
           <h2 className="font-display font-semibold mb-4">Creator-Vergleich · Revenue vs. Ziel</h2>
+          {compareData.length === 0 ? (
+            <div className="h-[280px] grid place-items-center text-sm text-muted-foreground">Noch keine Creator-Daten</div>
+          ) : (
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={compareData}>
               <XAxis dataKey="name" stroke="oklch(0.6 0.02 270)" fontSize={11} axisLine={false} tickLine={false} />
@@ -110,10 +120,14 @@ function Analytics() {
               <Bar dataKey="revenue" fill="oklch(0.68 0.28 340)" radius={[6, 6, 0, 0]} name="Revenue" />
             </BarChart>
           </ResponsiveContainer>
+          )}
         </Card>
 
         <Card className="p-5 lg:p-6">
           <h2 className="font-display font-semibold mb-4">Revenue nach Niche</h2>
+          {nicheData.length === 0 ? (
+            <div className="h-[200px] grid place-items-center text-sm text-muted-foreground">Keine Nischen-Daten</div>
+          ) : (
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie data={nicheData} dataKey="value" innerRadius={45} outerRadius={85} paddingAngle={3}>
@@ -122,6 +136,7 @@ function Analytics() {
               <Tooltip contentStyle={{ background: "oklch(0.2 0.014 280)", border: "1px solid oklch(0.28 0.018 280)", borderRadius: 12 }} formatter={(v: number) => eur(v)} />
             </PieChart>
           </ResponsiveContainer>
+          )}
           <div className="space-y-1.5 mt-3">
             {nicheData.map((n, i) => (
               <div key={n.name} className="flex items-center justify-between text-xs">
@@ -135,15 +150,25 @@ function Analytics() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-5 lg:p-6">
-          <h2 className="font-display font-semibold mb-4">Retention Trend</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={trend.map((r, i) => ({ ...r, retention: 80 + i * 1.4 }))}>
-              <XAxis dataKey="month" stroke="oklch(0.6 0.02 270)" fontSize={11} axisLine={false} tickLine={false} />
-              <YAxis stroke="oklch(0.6 0.02 270)" fontSize={11} axisLine={false} tickLine={false} domain={[70, 95]} />
-              <Tooltip contentStyle={{ background: "oklch(0.2 0.014 280)", border: "1px solid oklch(0.28 0.018 280)", borderRadius: 12 }} />
-              <Line type="monotone" dataKey="retention" stroke="oklch(0.78 0.16 200)" strokeWidth={3} dot={{ fill: "oklch(0.78 0.16 200)" }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <h2 className="font-display font-semibold mb-4">OnlyFansAPI Status</h2>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Verbindung</span>
+              <Badge tone={ofStats?.connected ? "success" : "warning"}>
+                {ofStats?.connected ? "Verbunden" : ofStats?.pendingLink ? "Wird verbunden…" : "Nicht verbunden"}
+              </Badge>
+            </div>
+            {ofStats?.connected && (
+              <>
+                <div className="flex justify-between"><span className="text-muted-foreground">Account</span><span>@{ofStats.username ?? "—"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Subscribers</span><span>{fmt(ofStats.subscribersCount ?? 0)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Posts</span><span>{ofStats.postsCount ?? 0}</span></div>
+              </>
+            )}
+            {!ofStats?.connected && (
+              <p className="text-xs text-muted-foreground">{ofStats?.message ?? "API-Key in Settings prüfen und Account bei onlyfansapi.com verbinden."}</p>
+            )}
+          </div>
         </Card>
 
         <Card className="p-5 lg:p-6">
@@ -153,7 +178,7 @@ function Analytics() {
               <div key={c.id}>
                 <div className="flex items-center justify-between mb-1.5 gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <img src={c.avatar} className="size-6 rounded-md shrink-0" alt="" />
+                    <CreatorAvatar src={c.avatar} name={c.name} className="size-6" rounded="lg" />
                     <span className="text-sm font-medium truncate">{c.name}</span>
                     <Badge>{c.revenueShare}/{100 - c.revenueShare}</Badge>
                   </div>

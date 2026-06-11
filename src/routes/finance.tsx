@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, Card, Stat, Badge, Btn, Select } from "@/components/AppShell";
+import { useCreators } from "@/hooks/useCreators";
 import { useStore, eur } from "@/lib/store";
 import { Wallet, Download, Check, Pause, Play } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/finance")({
 });
 
 function Finance() {
-  const creators = useStore((s) => s.creators);
+  const { data: creators = [] } = useCreators();
   const payouts = useStore((s) => s.payouts);
   const setStatus = useStore((s) => s.setPayoutStatus);
   const payAll = useStore((s) => s.payAll);
@@ -25,23 +26,24 @@ function Finance() {
 
   const list = useMemo(() => payouts.filter((p) => filter === "all" || p.status === filter), [payouts, filter]);
 
+  const cName = (id: string) => creators.find((c) => c.id === id)?.name ?? "Unbekannt";
+  const cShare = (id: string) => creators.find((c) => c.id === id)?.revenueShare ?? 70;
+
   const totalGross = creators.reduce((s, c) => s + c.monthlyRevenue, 0);
   const creatorTotal = creators.reduce((s, c) => s + c.monthlyRevenue * (c.revenueShare / 100), 0);
   const agencyTotal = totalGross - creatorTotal;
+  const pct = (part: number) => (totalGross > 0 ? `${Math.round((part / totalGross) * 100)}% Anteil` : "Keine Daten");
   const scheduled = payouts.filter((p) => p.status === "scheduled").reduce((s, p) => {
-    const c = creators.find((cr) => cr.id === p.creatorId)!;
-    return s + p.gross * (c.revenueShare / 100);
+    return s + p.gross * (cShare(p.creatorId) / 100);
   }, 0);
-
-  const cName = (id: string) => creators.find((c) => c.id === id)?.name ?? "—";
-  const cShare = (id: string) => creators.find((c) => c.id === id)?.revenueShare ?? 70;
 
   const exportCSV = () => {
     const rows = [["Creator","Brutto","Creator Share","Agency Share","Methode","Status","Datum"]];
     list.forEach((p) => {
-      const c = creators.find((cr) => cr.id === p.creatorId)!;
-      const cs = Math.round(p.gross * (c.revenueShare / 100));
-      rows.push([c.name, String(p.gross), String(cs), String(p.gross - cs), p.method, p.status, p.date]);
+      const name = cName(p.creatorId);
+      const share = cShare(p.creatorId);
+      const cs = Math.round(p.gross * (share / 100));
+      rows.push([name, String(p.gross), String(cs), String(p.gross - cs), p.method, p.status, p.date]);
     });
     const csv = rows.map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -65,8 +67,8 @@ function Finance() {
     >
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5">
         <Stat label="Bruttoumsatz" value={eur(totalGross)} delta="Mai 2026" accent="magenta" />
-        <Stat label="Creator Payouts" value={eur(creatorTotal)} delta={`${Math.round(creatorTotal/totalGross*100)}% Anteil`} accent="cyan" />
-        <Stat label="Agency Revenue" value={eur(agencyTotal)} delta={`${Math.round(agencyTotal/totalGross*100)}% Anteil`} accent="success" />
+        <Stat label="Creator Payouts" value={eur(creatorTotal)} delta={pct(creatorTotal)} accent="cyan" />
+        <Stat label="Agency Revenue" value={eur(agencyTotal)} delta={pct(agencyTotal)} accent="success" />
         <Stat label="Ausstehend" value={eur(scheduled)} delta="zur Auszahlung" accent="warning" />
       </div>
 

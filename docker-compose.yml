@@ -10,6 +10,7 @@ services:
       - NODE_ENV=production
       - PORT=8080
       - PUBLIC_URL=/
+      - API_PROXY_TARGET=http://api:4000
     depends_on:
       - api
     restart: unless-stopped
@@ -24,15 +25,38 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - ONLYFANS_BASE_URL=${ONLYFANS_BASE_URL}
+      - ONLYFANS_API_KEY=${ONLYFANS_API_KEY}
+      - ONLYFANS_PROFILE_SLUG=${ONLYFANS_PROFILE_SLUG}
+      - ONLYFANS_ACCOUNT_ID=${ONLYFANS_ACCOUNT_ID:-}
       - ONLYFANS_CLIENT_ID=${ONLYFANS_CLIENT_ID}
       - ONLYFANS_CLIENT_SECRET=${ONLYFANS_CLIENT_SECRET}
       - ONLYFANS_ACCESS_TOKEN=${ONLYFANS_ACCESS_TOKEN}
       - ONLYFANS_USERNAME=${ONLYFANS_USERNAME}
       - ONLYFANS_PASSWORD=${ONLYFANS_PASSWORD}
+      # AI (OpenAI-compatible — OpenAI, xAI, etc.)
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.openai.com/v1}
+      - AI_MODEL=${AI_MODEL:-gpt-4o-mini}
+      - AI_PROVIDER=${AI_PROVIDER:-openai}
+      # Talent Scout — Google via Serper (https://serper.dev)
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - SERPER_GL=${SERPER_GL:-de}
+      - SERPER_HL=${SERPER_HL:-de}
+      # n8n (optional — only active when an n8n container is reachable)
+      - N8N_BASE_URL=${N8N_BASE_URL:-http://host.docker.internal:5678}
+      - N8N_API_KEY=${N8N_API_KEY:-}
+      - N8N_EMBED_PORT=${N8N_EMBED_PORT:-5679}
+      - N8N_PUBLISH_PORT=${N8N_PUBLISH_PORT:-5678}
     ports:
       - "4000:4000"
+      - "5679:5679"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./server/data:/usr/src/app/data
     restart: unless-stopped
 
   db:
@@ -43,6 +67,11 @@ services:
       - POSTGRES_PASSWORD=lumina
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lumina -d lumina"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   redis:

@@ -1,0 +1,2 @@
+// Release / TestFlight — kein Capacitor-Debug-Bridge
+CAPACITOR_DEBUG = false

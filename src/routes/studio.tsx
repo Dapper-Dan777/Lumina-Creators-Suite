@@ -1,7 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell, Card, Badge, Btn, Modal, Field, Input, Select, Textarea } from "@/components/AppShell";
-import { useStore, type ContentStatus, type ContentItem, eur } from "@/lib/store";
-import { Sparkles, Image as ImageIcon, Calendar as CalendarIcon, CheckCircle2, Clock, FileEdit, Plus, Trash2, Check, X, Upload, Send } from "lucide-react";
+import { PostingAssistant, isPostableToday } from "@/components/PostingAssistant";
+import { MediaLibraryPanel } from "@/components/MediaLibraryPanel";
+import { ContentCalendar } from "@/components/ContentCalendar";
+import { useContent, useContentMutations } from "@/hooks/useContent";
+import { useCreators } from "@/hooks/useCreators";
+import { useAiCaption, useAiStatus } from "@/hooks/useAi";
+import { type ContentStatus, type ContentItem, eur } from "@/lib/store";
+import { Sparkles, Image as ImageIcon, Calendar as CalendarIcon, CheckCircle2, Clock, FileEdit, Plus, Trash2, Check, Upload, Send, Loader2 } from "lucide-react";
 import { useMemo, useState, type DragEvent } from "react";
 import { toast } from "sonner";
 
@@ -19,13 +25,34 @@ export const Route = createFileRoute("/studio")({
 const STATUSES: ContentStatus[] = ["draft", "pending", "approved", "scheduled"];
 
 function Studio() {
+  const { data: content = [], isLoading: contentLoading } = useContent();
+  const { data: creators = [], isLoading: creatorsLoading } = useCreators();
+  const { update } = useContentMutations();
   const [tab, setTab] = useState<"queue" | "library" | "calendar" | "ai">("queue");
+  const [postingItem, setPostingItem] = useState<ContentItem | null>(null);
+
+  const todayItems = useMemo(() => content.filter(isPostableToday), [content]);
+  const loading = contentLoading || creatorsLoading;
+  const postingCreator = postingItem
+    ? creators.find((c) => c.id === postingItem.creatorId)
+    : null;
+
   const tabs = [
     { id: "queue" as const, label: "Approval", icon: CheckCircle2 },
     { id: "library" as const, label: "Library", icon: ImageIcon },
     { id: "calendar" as const, label: "Kalender", icon: CalendarIcon },
     { id: "ai" as const, label: "AI Captions", icon: Sparkles },
   ];
+
+  if (loading) {
+    return (
+      <AppShell title="Content Studio" subtitle="Lade Daten…">
+        <Card className="p-12 grid place-items-center text-muted-foreground">
+          <Loader2 className="size-8 animate-spin" />
+        </Card>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell title="Content Studio" subtitle="Approval Workflow · Media · Calendar · AI">
@@ -43,20 +70,65 @@ function Studio() {
         })}
       </div>
 
-      {tab === "queue" && <Queue />}
+      {todayItems.length > 0 && (
+        <Card className="mb-4 p-4 border-primary/30 bg-primary/5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="font-display font-semibold text-sm flex items-center gap-2">
+                <Send className="size-4 text-primary" />
+                Heute fällig — {todayItems.length} Post{todayItems.length !== 1 ? "s" : ""}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Assisted Workflow: Caption kopieren → OnlyFans öffnen → manuell bestätigen
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {todayItems.slice(0, 3).map((item) => {
+                const cr = creators.find((c) => c.id === item.creatorId);
+                return (
+                  <Btn
+                    key={item.id}
+                    variant="brand"
+                    size="sm"
+                    onClick={() => setPostingItem(item)}
+                  >
+                    {cr?.name.split(" ")[0]} · {item.title.slice(0, 20)}
+                    {item.title.length > 20 ? "…" : ""}
+                  </Btn>
+                );
+              })}
+              {todayItems.length > 3 && (
+                <Badge tone="info">+{todayItems.length - 3} weitere im Kalender</Badge>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {tab === "queue" && <Queue onPostToday={setPostingItem} />}
       {tab === "library" && <Library />}
-      {tab === "calendar" && <CalendarView />}
+      {tab === "calendar" && <ContentCalendar onPostToday={setPostingItem} />}
       {tab === "ai" && <AIStudio />}
+
+      {postingItem && postingCreator && (
+        <PostingAssistant
+          item={postingItem}
+          creatorName={postingCreator.name}
+          creatorHandle={postingCreator.handle}
+          creatorNiche={postingCreator.niche}
+          onlyfansUrl={postingCreator.onlyfansUrl}
+          onPublished={() => update.mutate({ id: postingItem.id, status: "published" })}
+          onClose={() => setPostingItem(null)}
+        />
+      )}
     </AppShell>
   );
 }
 
-function Queue() {
-  const content = useStore((s) => s.content);
-  const creators = useStore((s) => s.creators);
-  const moveContent = useStore((s) => s.moveContent);
-  const addContent = useStore((s) => s.addContent);
-  const removeContent = useStore((s) => s.removeContent);
+function Queue({ onPostToday }: { onPostToday: (item: ContentItem) => void }) {
+  const { data: content = [] } = useContent();
+  const { data: creators = [] } = useCreators();
+  const { update, create, remove } = useContentMutations();
 
   const [bulk, setBulk] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<string | null>(null);
@@ -68,14 +140,14 @@ function Queue() {
     e.preventDefault();
     const id = e.dataTransfer.getData("text/plain") || drag;
     if (id) {
-      moveContent(id, status);
+      update.mutate({ id, status });
       toast.success(`Verschoben → ${status}`);
     }
     setDrag(null);
   };
 
   const bulkAction = (status: ContentStatus) => {
-    bulk.forEach((id) => moveContent(id, status));
+    bulk.forEach((id) => update.mutate({ id, status }));
     toast.success(`${bulk.size} Items → ${status}`);
     setBulk(new Set());
   };
@@ -89,7 +161,7 @@ function Queue() {
             <span className="text-xs text-muted-foreground">{bulk.size} ausgewählt</span>
             <Btn variant="outline" size="sm" onClick={() => bulkAction("approved")}><Check className="size-3.5" /> Approve</Btn>
             <Btn variant="outline" size="sm" onClick={() => bulkAction("draft")}>↩ Zurück zu Draft</Btn>
-            <Btn variant="danger" size="sm" onClick={() => { bulk.forEach((id) => removeContent(id)); toast(`${bulk.size} gelöscht`); setBulk(new Set()); }}>
+            <Btn variant="danger" size="sm" onClick={() => { bulk.forEach((id) => remove.mutate(id)); toast(`${bulk.size} gelöscht`); setBulk(new Set()); }}>
               <Trash2 className="size-3.5" /> Löschen
             </Btn>
             <Btn variant="ghost" size="sm" onClick={() => setBulk(new Set())}>Abbrechen</Btn>
@@ -133,15 +205,23 @@ function Queue() {
                       </div>
                       {status === "pending" && (
                         <div className="flex gap-1 mt-2">
-                          <button onClick={() => { moveContent(item.id, "approved"); toast.success("Approved"); }}
+                          <button onClick={() => { update.mutate({ id: item.id, status: "approved" }); toast.success("Approved"); }}
                             className="flex-1 h-7 rounded-md bg-success/20 text-success text-xs font-medium hover:bg-success/30">✓ Approve</button>
-                          <button onClick={() => { moveContent(item.id, "draft"); toast("Zurück zu Draft"); }}
+                          <button onClick={() => { update.mutate({ id: item.id, status: "draft" }); toast("Zurück zu Draft"); }}
                             className="flex-1 h-7 rounded-md bg-destructive/20 text-destructive text-xs font-medium hover:bg-destructive/30">✗ Reject</button>
                         </div>
                       )}
                       {status === "approved" && (
-                        <button onClick={() => { moveContent(item.id, "scheduled"); toast.success("Geplant"); }}
+                        <button onClick={() => { update.mutate({ id: item.id, status: "scheduled" }); toast.success("Geplant"); }}
                           className="w-full mt-2 h-7 rounded-md bg-cyan/20 text-cyan text-xs font-medium hover:bg-cyan/30">📅 Einplanen</button>
+                      )}
+                      {isPostableToday(item) && (
+                        <button
+                          onClick={() => onPostToday(item)}
+                          className="w-full mt-2 h-7 rounded-md bg-gradient-brand text-white text-xs font-medium shadow-glow flex items-center justify-center gap-1"
+                        >
+                          <Send className="size-3" /> Heute posten
+                        </button>
                       )}
                     </div>
                   </div>
@@ -157,14 +237,25 @@ function Queue() {
         ))}
       </div>
 
-      {addOpen && <AddContentModal onClose={() => setAddOpen(false)} onAdd={(c) => { addContent(c); toast.success("Content angelegt"); setAddOpen(false); }} />}
+      {addOpen && (
+        <AddContentModal
+          onClose={() => setAddOpen(false)}
+          onAdd={(c) => {
+            create.mutate(c, {
+              onSuccess: () => { toast.success("Content angelegt"); setAddOpen(false); },
+              onError: (e) => toast.error(e.message),
+            });
+          }}
+        />
+      )}
     </>
   );
 }
 
 function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: Omit<ContentItem, "id">) => void }) {
-  const creators = useStore((s) => s.creators);
+  const { data: creators = [] } = useCreators();
   const [title, setTitle] = useState("");
+  const [caption, setCaption] = useState("");
   const [creatorId, setCreatorId] = useState(creators[0]?.id ?? "");
   const [type, setType] = useState<ContentItem["type"]>("Post");
   const [price, setPrice] = useState("");
@@ -185,7 +276,11 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: O
         <Btn variant="brand" onClick={() => {
           if (!title.trim()) return toast.error("Titel fehlt");
           onAdd({
-            title, creatorId, type, status: "draft",
+            title,
+            caption: caption.trim() || title,
+            creatorId,
+            type,
+            status: "draft",
             scheduledFor: new Date(date).toISOString(),
             price: price ? Number(price) : undefined,
             cover: `linear-gradient(135deg,#ec4899,#22d3ee)`,
@@ -204,6 +299,9 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: O
           )}
         </div>
         <Field label="Titel"><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Beach photoshoot — set #5" autoFocus /></Field>
+        <Field label="Caption (für OnlyFans)">
+          <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} className="h-20" placeholder="Text der in die Zwischenablage kopiert wird…" />
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Creator">
             <Select value={creatorId} onChange={(e) => setCreatorId(e.target.value)}>
@@ -224,143 +322,41 @@ function AddContentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: O
 }
 
 function Library() {
-  const content = useStore((s) => s.content);
-  const creators = useStore((s) => s.creators);
-  const [filter, setFilter] = useState("");
-  const items = useMemo(() => content.filter((c) => !filter || c.type === filter), [content, filter]);
-
-  return (
-    <Card className="p-5 lg:p-6">
-      <div className="flex flex-wrap gap-2 mb-4">
-        {["", "Post", "PPV", "Video", "Story"].map((f) => (
-          <button key={f || "all"} onClick={() => setFilter(f)}
-            className={`px-3 h-8 rounded-md text-xs font-medium transition ${filter === f ? "bg-gradient-brand text-white" : "bg-elevated border border-border hover:border-primary/40"}`}>
-            {f || "Alle"}
-          </button>
-        ))}
-        <span className="ml-auto text-xs text-muted-foreground self-center">{items.length} Items</span>
-      </div>
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-        {items.map((item) => {
-          const c = creators.find((cr) => cr.id === item.creatorId);
-          return (
-            <div key={item.id} className="aspect-square rounded-lg relative overflow-hidden group cursor-pointer border border-border" style={{ background: item.cover }}>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent group-hover:from-black/90 transition" />
-              <div className="absolute bottom-2 left-2 right-2 text-[10px] text-white">
-                <div className="font-medium truncate">{item.title}</div>
-                <div className="opacity-70 truncate">{c?.name}</div>
-              </div>
-              <div className="absolute top-2 right-2"><Badge tone="magenta">{item.type}</Badge></div>
-            </div>
-          );
-        })}
-      </div>
-    </Card>
-  );
-}
-
-function CalendarView() {
-  const content = useStore((s) => s.content);
-  const reschedule = useStore((s) => s.rescheduleContent);
-  const [drag, setDrag] = useState<string | null>(null);
-
-  const days = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-  // Build current month grid (28 days starting Monday of current week)
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const dow = (start.getDay() + 6) % 7;
-  start.setDate(start.getDate() - dow);
-
-  const cells = Array.from({ length: 28 }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    const iso = d.toISOString().slice(0, 10);
-    const items = content.filter((c) => c.scheduledFor.slice(0, 10) === iso);
-    return { d, iso, items };
-  });
-
-  return (
-    <Card className="p-3 lg:p-6">
-      <div className="grid grid-cols-7 gap-1.5 lg:gap-2">
-        {days.map((d) => <div key={d} className="text-xs font-medium text-muted-foreground text-center pb-2">{d}</div>)}
-        {cells.map((c, i) => {
-          const today = c.iso === new Date().toISOString().slice(0, 10);
-          return (
-            <div key={i}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain") || drag; if (id) { reschedule(id, new Date(c.iso).toISOString()); toast.success(`Verschoben auf ${c.d.toLocaleDateString("de-DE")}`); } setDrag(null); }}
-              className={`min-h-[80px] lg:min-h-[100px] p-1.5 lg:p-2 rounded-lg border transition ${today ? "bg-primary/10 border-primary/40" : "bg-elevated border-border hover:border-primary/30"}`}>
-              <div className={`text-[10px] lg:text-xs mb-1 ${today ? "text-primary font-bold" : "text-muted-foreground"}`}>{c.d.getDate()}</div>
-              <div className="space-y-1">
-                {c.items.slice(0, 3).map((it) => (
-                  <div key={it.id} draggable
-                    onDragStart={(e) => { e.dataTransfer.setData("text/plain", it.id); setDrag(it.id); }}
-                    onDragEnd={() => setDrag(null)}
-                    className={`text-[9px] lg:text-[10px] px-1 lg:px-1.5 py-0.5 rounded truncate cursor-grab ${
-                      it.type === "PPV" ? "bg-primary/25 text-primary" : it.type === "Post" ? "bg-cyan/25 text-cyan" : "bg-warning/25 text-warning"
-                    }`}>
-                    {it.type} · {it.title}
-                  </div>
-                ))}
-                {c.items.length > 3 && <div className="text-[9px] text-muted-foreground">+{c.items.length - 3}</div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-4 text-xs text-muted-foreground flex items-center gap-2">
-        💡 Items per Drag&Drop in andere Tage ziehen
-      </div>
-    </Card>
-  );
+  return <MediaLibraryPanel />;
 }
 
 const TONE_PRESETS = ["flirty", "playful", "premium", "mysterious", "wholesome"];
 
 function AIStudio() {
-  const creators = useStore((s) => s.creators);
-  const [prompt, setPrompt] = useState("Beach photoshoot, golden hour, playful mood");
+  const { data: creators = [] } = useCreators();
+  const { data: aiStatus } = useAiStatus();
+  const aiCaption = useAiCaption();
+  const [prompt, setPrompt] = useState("");
   const [creatorId, setCreatorId] = useState(creators[0]?.id ?? "");
   const [tone, setTone] = useState("flirty");
+  const [contentType, setContentType] = useState("Post");
+  const [ppvPrice, setPpvPrice] = useState("");
   const [results, setResults] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  const generate = () => {
+  const generate = async () => {
     if (!prompt.trim()) return toast.error("Beschreibung fehlt");
-    setLoading(true);
-    setTimeout(() => {
-      const c = creators.find((x) => x.id === creatorId);
-      const niche = c?.niche ?? "Lifestyle";
-      const variants = {
-        flirty: [
-          `Hey baby ✨ ${prompt.split(",")[0]} — wer kommt mit? 💋`,
-          `Dachte gerade an dich beim ${prompt.split(",")[0]} 😘 willst sehen was ich getragen hab?`,
-          `Drei neue Sets sind live für meine VIPs 🔥 DM für den Drop`,
-        ],
-        playful: [
-          `${prompt.split(",")[0]} ✨ Sand zwischen den Zehen, gute Laune ⭐`,
-          `Wer würde mit mir tauschen? 😏 Heute war's perfekt — neue Pics in den DMs`,
-          `Spoiler: das nächste Set wird wild 🌶️ stay tuned ${niche.toLowerCase()} family`,
-        ],
-        premium: [
-          `Ein neues Kapitel beginnt – exklusiv für meine engsten Supporter. 🤍`,
-          `Nur die feinste Auswahl: heute Abend, nur für VIP-Tier. Aktiviert deine Notifications.`,
-          `${niche} in seiner reinsten Form – verfügbar in deiner DM.`,
-        ],
-        mysterious: [
-          `Manche Dinge zeige ich nur in den DMs. 🌙`,
-          `Du wirst es lieben… aber nur wenn du fragst. 🕊️`,
-          `Heute Nacht passiert etwas. Bist du dabei?`,
-        ],
-        wholesome: [
-          `Was für ein magischer Tag ✨ danke fürs Daheim-Halten dieser Vibes 💕`,
-          `Du machst meine Woche besser, einfach indem du hier bist 🥰`,
-          `Kleine BTS-Story für meine Lieblingsmenschen — ihr seid Gold wert.`,
-        ],
-      } as Record<string, string[]>;
-      setResults(variants[tone]);
-      setLoading(false);
-    }, 700);
+    const c = creators.find((x) => x.id === creatorId);
+    if (!c) return toast.error("Creator wählen");
+    if (!aiStatus?.configured) return toast.error("AI_API_KEY in .env setzen");
+    try {
+      const captions = await aiCaption.mutateAsync({
+        creatorName: c.name,
+        niche: c.niche,
+        tone,
+        description: prompt,
+        contentType,
+        ppvPrice: ppvPrice ? Number(ppvPrice) : undefined,
+      });
+      setResults(captions);
+      toast.success("3 Captions generiert");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "KI fehlgeschlagen");
+    }
   };
 
   const copy = (text: string) => { navigator.clipboard.writeText(text); toast.success("Kopiert"); };
@@ -384,11 +380,29 @@ function AIStudio() {
               ))}
             </div>
           </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Typ">
+              <Select value={contentType} onChange={(e) => setContentType(e.target.value)}>
+                <option value="Post">Post</option>
+                <option value="PPV">PPV</option>
+                <option value="Video">Video</option>
+                <option value="Story">Story</option>
+              </Select>
+            </Field>
+            {contentType === "PPV" && (
+              <Field label="PPV Preis (€)">
+                <Input type="number" value={ppvPrice} onChange={(e) => setPpvPrice(e.target.value)} placeholder="25" />
+              </Field>
+            )}
+          </div>
           <Field label="Content-Beschreibung">
-            <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="h-24" placeholder="Was zeigt das Set?" />
+            <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="h-24" placeholder="z.B. Beach shoot golden hour, lingerie set #3, playful vibe…" />
           </Field>
-          <Btn variant="brand" className="w-full" size="lg" onClick={generate} disabled={loading}>
-            {loading ? "Generiere…" : <><Sparkles className="size-4" /> Captions generieren</>}
+          {!aiStatus?.configured && (
+            <p className="text-xs text-amber-500">AI_API_KEY in .env setzen um KI-Captions zu nutzen</p>
+          )}
+          <Btn variant="brand" className="w-full" size="lg" onClick={generate} disabled={aiCaption.isPending || !aiStatus?.configured}>
+            {aiCaption.isPending ? <><Loader2 className="size-4 animate-spin" /> Generiere…</> : <><Sparkles className="size-4" /> Captions generieren</>}
           </Btn>
         </div>
       </Card>

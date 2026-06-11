@@ -1,7 +1,10 @@
 FROM node:22-alpine
 WORKDIR /usr/src/app
-COPY package.json ./
-RUN npm install --production --silent
+RUN apk add --no-cache openssl
+COPY package.json package-lock.json ./
+RUN npm install --silent
+COPY prisma ./prisma
+RUN npx prisma generate
 COPY . .
 EXPOSE 4000
-CMD ["node", "index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node index.js"]

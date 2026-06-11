@@ -1,0 +1,29 @@
+# Dev-Override: Live-Reload beim Entwickeln in Docker.
+# Start: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Produktion (ohne Live-Reload): docker compose up --build -d
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./vite.config.ts:/app/vite.config.ts
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./components.json:/app/components.json
+    environment:
+      - NODE_ENV=development
+      - API_PROXY_TARGET=http://api:4000
+
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./server:/usr/src/app
+      - ./.env:/usr/src/.env:ro
+    environment:
+      - NODE_ENV=development

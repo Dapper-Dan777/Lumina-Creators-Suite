@@ -1,8 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AppShell, Card, Stat, Badge, Btn, Modal, Field, Input, Select } from "@/components/AppShell";
+import { AppShell, Card, Stat, Badge, Btn, Modal, Field, Input, Select, ErrorState } from "@/components/AppShell";
+import { CreatorAvatar } from "@/components/CreatorAvatar";
+import { useCreators } from "@/hooks/useCreators";
+import { useOnlyFansStats } from "@/hooks/useOnlyFansStats";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useStore, eur, fmt, timeAgo } from "@/lib/store";
 import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from "recharts";
-import { AlertTriangle, TrendingUp, CheckCircle2, FileWarning, Plus, X, Check, Circle } from "lucide-react";
+import { AlertTriangle, TrendingUp, CheckCircle2, FileWarning, Plus, X, Check, Circle, Loader2, Radio } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -17,24 +21,17 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-const trend = [
-  { month: "Dez", revenue: 142000 },
-  { month: "Jan", revenue: 156000 },
-  { month: "Feb", revenue: 168000 },
-  { month: "Mär", revenue: 175000 },
-  { month: "Apr", revenue: 182000 },
-  { month: "Mai", revenue: 188580 },
-];
+const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul"];
 
 function Dashboard() {
-  const creators = useStore((s) => s.creators);
+  const { data: creators = [], isLoading: creatorsLoading, isError: creatorsError, error: creatorsLoadError, refetch: refetchCreators } = useCreators();
+  const { data: ofStats } = useOnlyFansStats();
   const tasks = useStore((s) => s.tasks);
-  const alerts = useStore((s) => s.alerts);
+  const { alerts, dismissAlert } = useNotifications();
   const activity = useStore((s) => s.activity);
   const toggleTask = useStore((s) => s.toggleTask);
   const removeTask = useStore((s) => s.removeTask);
   const addTask = useStore((s) => s.addTask);
-  const dismissAlert = useStore((s) => s.dismissAlert);
 
   const [addOpen, setAddOpen] = useState(false);
   const [taskTitle, setTaskTitle] = useState("");
@@ -43,7 +40,22 @@ function Dashboard() {
 
   const totalRevenue = useMemo(() => creators.reduce((s, c) => s + c.monthlyRevenue, 0), [creators]);
   const totalSubs = useMemo(() => creators.reduce((s, c) => s + c.subscribers, 0), [creators]);
+  const liveSubs = ofStats?.connected && ofStats.subscribersCount != null
+    ? ofStats.subscribersCount
+    : null;
   const activeCreators = creators.filter((c) => c.status === "active").length;
+  const onboardingCount = creators.filter((c) => c.status === "onboarding").length;
+  const avgShare = creators.length
+    ? Math.round(creators.reduce((s, c) => s + (100 - c.revenueShare), 0) / creators.length)
+    : 0;
+
+  const trend = useMemo(() => {
+    if (!creators.length) return [];
+    return MONTHS.map((month, i) => ({
+      month,
+      revenue: creators.reduce((s, c) => s + (c.trend?.[i] ?? 0), 0),
+    }));
+  }, [creators]);
 
   const top = [...creators].sort((a, b) => b.monthlyRevenue - a.monthlyRevenue).slice(0, 5);
 
@@ -61,12 +73,73 @@ function Dashboard() {
         <Btn variant="brand" onClick={() => setAddOpen(true)}><Plus className="size-4" /> Neue Aufgabe</Btn>
       }
     >
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5 lg:mb-6">
-        <Stat label="Monats-Revenue" value={eur(totalRevenue)} delta="+12.4% vs. Vormonat" accent="magenta" />
-        <Stat label="Subscribers" value={fmt(totalSubs)} delta="+1.842 neu" accent="cyan" />
-        <Stat label="Aktive Creator" value={`${activeCreators}/${creators.length}`} delta="1 im Onboarding" accent="success" />
-        <Stat label="Agency Cut" value={eur(Math.round(totalRevenue * 0.31))} delta="Ø 31% Share" accent="warning" />
-      </div>
+      {creatorsLoading ? (
+        <Card className="mb-5 p-8 grid place-items-center text-muted-foreground">
+          <Loader2 className="size-6 animate-spin" />
+        </Card>
+      ) : creatorsError ? (
+        <ErrorState
+          title="Creator-Daten nicht geladen"
+          message={creatorsLoadError instanceof Error ? creatorsLoadError.message : "API nicht erreichbar"}
+          onRetry={() => refetchCreators()}
+        />
+      ) : (
+        <>
+          {ofStats && (
+            <Card className={`mb-5 p-4 border ${ofStats.connected ? "border-success/30 bg-success/[0.06]" : "border-warning/30 bg-warning/[0.06]"}`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Radio className={`size-4 ${ofStats.connected ? "text-success" : "text-amber-500"}`} />
+                  <div>
+                    <div className="text-sm font-medium">
+                      {ofStats.connected
+                        ? `OnlyFansAPI live: @${ofStats.username ?? "—"}`
+                        : ofStats.pendingLink
+                          ? "OnlyFans-Account wird bei onlyfansapi.com verbunden…"
+                          : "OnlyFansAPI — noch nicht verbunden"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {ofStats.connected
+                        ? `${fmt(ofStats.subscribersCount ?? 0)} Subscribers · ${ofStats.postsCount ?? 0} Posts`
+                        : (ofStats.message ?? "Verbinde deinen Account unter app.onlyfansapi.com")}
+                    </div>
+                  </div>
+                </div>
+                {ofStats.connected && (
+                  <Badge tone="success">Live Sync</Badge>
+                )}
+              </div>
+            </Card>
+          )}
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5 lg:mb-6">
+            <Stat
+              label="Monats-Revenue"
+              value={eur(totalRevenue)}
+              delta={creators.length ? "aus Creator-Daten" : "Noch keine Creator"}
+              accent="magenta"
+            />
+            <Stat
+              label="Subscribers"
+              value={fmt(liveSubs ?? totalSubs)}
+              delta={liveSubs != null ? "live via OnlyFansAPI" : creators.length ? "aus Creator-Daten" : "—"}
+              accent="cyan"
+            />
+            <Stat
+              label="Aktive Creator"
+              value={creators.length ? `${activeCreators}/${creators.length}` : "0"}
+              delta={onboardingCount > 0 ? `${onboardingCount} im Onboarding` : creators.length ? "alle aktiv" : "Creator anlegen"}
+              accent="success"
+            />
+            <Stat
+              label="Agency Cut"
+              value={eur(Math.round(totalRevenue * (avgShare / 100)))}
+              delta={creators.length ? `Ø ${avgShare}% Share` : "—"}
+              accent="warning"
+            />
+          </div>
+        </>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4 lg:mb-6">
         <Card className="lg:col-span-2 p-5 lg:p-6">
@@ -75,8 +148,15 @@ function Dashboard() {
               <h2 className="font-display font-semibold text-base lg:text-lg">Revenue Trend</h2>
               <p className="text-xs text-muted-foreground">Letzte 6 Monate</p>
             </div>
-            <Badge tone="magenta">+32% YoY</Badge>
+            {trend.length > 0 && totalRevenue > 0 && (
+              <Badge tone="magenta">{eur(totalRevenue)} gesamt</Badge>
+            )}
           </div>
+          {trend.length === 0 || totalRevenue === 0 ? (
+            <div className="h-[220px] grid place-items-center text-sm text-muted-foreground">
+              Noch keine Revenue-Daten — Creator anlegen oder OnlyFansAPI verbinden
+            </div>
+          ) : (
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={trend}>
               <defs>
@@ -94,6 +174,7 @@ function Dashboard() {
               <Area type="monotone" dataKey="revenue" stroke="oklch(0.68 0.28 340)" strokeWidth={2.5} fill="url(#rev)" />
             </AreaChart>
           </ResponsiveContainer>
+          )}
         </Card>
 
         <Card className="p-5 lg:p-6">
@@ -133,12 +214,15 @@ function Dashboard() {
             <Link to="/creators" className="text-xs text-primary hover:underline">Alle →</Link>
           </div>
           <div className="space-y-1">
+            {top.length === 0 && (
+              <div className="text-sm text-muted-foreground py-8 text-center">Noch keine Creator — starte mit Onboarding</div>
+            )}
             {top.map((c, i) => {
-              const pct = Math.min(100, Math.round((c.monthlyRevenue / c.monthlyGoal) * 100));
+              const pct = c.monthlyGoal ? Math.min(100, Math.round((c.monthlyRevenue / c.monthlyGoal) * 100)) : 0;
               return (
                 <Link key={c.id} to="/creators" className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-elevated/60 transition">
                   <div className="text-xs font-bold w-5 text-muted-foreground">#{i + 1}</div>
-                  <img src={c.avatar} alt="" className="size-9 lg:size-10 rounded-full shrink-0" />
+                  <CreatorAvatar src={c.avatar} name={c.name} className="size-9 lg:size-10" rounded="full" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <div className="font-medium text-sm truncate">{c.name}</div>
@@ -203,6 +287,9 @@ function Dashboard() {
       <Card className="p-5 lg:p-6 mt-4 lg:mt-6">
         <h2 className="font-display font-semibold text-base lg:text-lg mb-4">Activity Log</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          {activity.length === 0 && (
+            <div className="text-sm text-muted-foreground py-4 col-span-full text-center">Noch keine Aktivitäten</div>
+          )}
           {activity.slice(0, 8).map((l) => (
             <div key={l.id} className="flex gap-3 text-sm">
               <div className="size-2 mt-1.5 rounded-full bg-cyan shrink-0" />
