@@ -1,10 +1,15 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const UPLOAD_ROOT = path.join(__dirname, '..', 'data', 'uploads');
+export const UPLOAD_ROOT =
+  process.env.UPLOAD_ROOT ??
+  (process.env.VERCEL
+    ? path.join(os.tmpdir(), 'lumina-uploads')
+    : path.join(__dirname, '..', 'data', 'uploads'));
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });

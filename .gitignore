@@ -40,3 +40,4 @@ android/
 # iOS build artifacts
 build/
 *.xcarchive
+.vercel

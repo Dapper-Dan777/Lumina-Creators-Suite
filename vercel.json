@@ -1,6 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build",
-  "installCommand": "npm ci",
-  "framework": null
+  "buildCommand": "npm run build:vercel",
+  "installCommand": "npm ci && npm ci --prefix server",
+  "framework": null,
+  "functions": {
+    ".vercel/output/functions/__server.func/**": {
+      "maxDuration": 60,
+      "includeFiles": "server/**"
+    }
+  }
 }

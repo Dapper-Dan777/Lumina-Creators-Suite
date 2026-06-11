@@ -1,6 +1,6 @@
 import "./lib/error-capture";
 
-import { proxyApiRequest } from "./lib/apiProxy";
+import { handleApiRequest } from "./lib/apiHandler";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
@@ -41,8 +41,8 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const { pathname } = new URL(request.url);
-    if (pathname.startsWith("/api/")) {
-      return proxyApiRequest(request);
+    if (pathname.startsWith("/api/") || pathname === "/health") {
+      return handleApiRequest(request);
     }
 
     try {
