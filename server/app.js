@@ -41,21 +41,27 @@ export async function ensureDatabase() {
   return dbReadyPromise;
 }
 
-app.use(async (_req, res, next) => {
-  try {
-    await ensureDatabase();
-    next();
-  } catch (error) {
-    console.error('Database init failed:', error.message);
-    res.status(503).json({
-      error: 'Database nicht erreichbar',
-      message: error.message,
-      hint: 'DATABASE_URL in Vercel setzen (z.B. Neon Postgres)',
-    });
-  }
-});
+app.get('/health', (_req, res) =>
+  res.json({
+    status: 'ok',
+    database: process.env.DATABASE_URL ? 'configured' : 'missing',
+  }),
+);
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/api/setup-status', (_req, res) => {
+  res.json({
+    ok: true,
+    env: {
+      DATABASE_URL: !!process.env.DATABASE_URL,
+      ONLYFANS_API_KEY: !!process.env.ONLYFANS_API_KEY,
+      AI_API_KEY: !!process.env.AI_API_KEY,
+      SERPER_API_KEY: !!process.env.SERPER_API_KEY,
+    },
+    hint: !process.env.DATABASE_URL
+      ? 'DATABASE_URL in Vercel → Settings → Environment Variables setzen, dann Redeploy'
+      : undefined,
+  });
+});
 
 app.get('/api/n8n/status', async (_req, res) => {
   const n8nBaseUrl = process.env.N8N_BASE_URL?.replace(/\/$/, '');
@@ -110,6 +116,26 @@ app.post('/api/integrations/onlyfans/test', async (_req, res) => {
     res.status(400).json({ ok: false, error: error.message });
   }
 });
+
+const requireDatabase = async (_req, res, next) => {
+  try {
+    await ensureDatabase();
+    next();
+  } catch (error) {
+    console.error('Database init failed:', error.message);
+    res.status(503).json({
+      error: 'Database nicht erreichbar',
+      message: error.message,
+      hint: 'DATABASE_URL in Vercel setzen (z.B. Neon Postgres), dann Redeploy',
+    });
+  }
+};
+
+app.use('/api/creators', requireDatabase);
+app.use('/api/content', requireDatabase);
+app.use('/api/scout', requireDatabase);
+app.use('/api/media', requireDatabase);
+app.use('/api/templates', requireDatabase);
 
 app.get('/api/onlyfans/accounts', async (_req, res) => {
   try {
@@ -176,7 +202,7 @@ app.use('/api/scout', scoutRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/templates', templatesRouter);
 
-app.post('/api/onlyfans/sync-avatars', async (_req, res) => {
+app.post('/api/onlyfans/sync-avatars', requireDatabase, async (_req, res) => {
   try {
     const { autoLinkCreators } = await import('./lib/ofLink.js');
     const { listAccounts } = await import('./adapters/onlyfans.js');
@@ -194,7 +220,7 @@ app.post('/api/onlyfans/sync-avatars', async (_req, res) => {
   }
 });
 
-app.post('/api/onlyfans/auto-link', async (_req, res) => {
+app.post('/api/onlyfans/auto-link', requireDatabase, async (_req, res) => {
   try {
     const { autoLinkCreators } = await import('./lib/ofLink.js');
     const { listAccounts } = await import('./adapters/onlyfans.js');
@@ -215,7 +241,7 @@ app.post('/api/onlyfans/auto-link', async (_req, res) => {
   }
 });
 
-app.post('/api/onlyfans/sync-creators', async (_req, res) => {
+app.post('/api/onlyfans/sync-creators', requireDatabase, async (_req, res) => {
   try {
     const { autoLinkCreators } = await import('./lib/ofLink.js');
     const { listAccounts } = await import('./adapters/onlyfans.js');
@@ -237,7 +263,7 @@ app.post('/api/onlyfans/sync-creators', async (_req, res) => {
   }
 });
 
-app.post('/api/onlyfans/sync-chats', async (req, res) => {
+app.post('/api/onlyfans/sync-chats', requireDatabase, async (req, res) => {
   try {
     const { pullMessages, listAccounts } = await import('./adapters/onlyfans.js');
     const { autoLinkCreators, findCreatorForAccount } = await import('./lib/ofLink.js');
@@ -304,7 +330,7 @@ app.post('/api/onlyfans/sync-chats', async (req, res) => {
   }
 });
 
-app.post('/api/onlyfans/send-message', async (req, res) => {
+app.post('/api/onlyfans/send-message', requireDatabase, async (req, res) => {
   try {
     const { sendChatMessage } = await import('./adapters/onlyfans.js');
     const { chatId, text, creatorId, price } = req.body ?? {};
