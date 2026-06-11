@@ -45,3 +45,4 @@ server/data/*.db-journal
 build/
 *.xcarchive
 .vercel
+server/prisma/**/*.db
