@@ -10,6 +10,7 @@ import {
   testConnection,
 } from './adapters/onlyfans.js';
 import { prisma } from './db.js';
+import { runMigrationsIfNeeded } from './lib/ensureMigrations.js';
 import { seedDatabaseIfEmpty } from './seed.js';
 import creatorsRouter from './routes/creators.js';
 import contentRouter from './routes/content.js';
@@ -34,6 +35,7 @@ let dbReadyPromise;
 export async function ensureDatabase() {
   if (!dbReadyPromise) {
     dbReadyPromise = (async () => {
+      await runMigrationsIfNeeded();
       await prisma.$connect();
       await seedDatabaseIfEmpty();
     })();
@@ -44,22 +46,19 @@ export async function ensureDatabase() {
 app.get('/health', (_req, res) =>
   res.json({
     status: 'ok',
-    database: process.env.DATABASE_URL ? 'configured' : 'missing',
+    database: 'sqlite',
   }),
 );
 
 app.get('/api/setup-status', (_req, res) => {
   res.json({
     ok: true,
+    database: 'sqlite',
     env: {
-      DATABASE_URL: !!process.env.DATABASE_URL,
       ONLYFANS_API_KEY: !!process.env.ONLYFANS_API_KEY,
       AI_API_KEY: !!process.env.AI_API_KEY,
       SERPER_API_KEY: !!process.env.SERPER_API_KEY,
     },
-    hint: !process.env.DATABASE_URL
-      ? 'DATABASE_URL in Vercel → Settings → Environment Variables setzen, dann Redeploy'
-      : undefined,
   });
 });
 
@@ -126,7 +125,7 @@ const requireDatabase = async (_req, res, next) => {
     res.status(503).json({
       error: 'Database nicht erreichbar',
       message: error.message,
-      hint: 'DATABASE_URL in Vercel setzen (z.B. Neon Postgres), dann Redeploy',
+      hint: 'Datenbank konnte nicht initialisiert werden — Logs auf Vercel prüfen',
     });
   }
 };

@@ -22,7 +22,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=4000
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=${DATABASE_URL:-file:/usr/src/app/data/lumina.db}
       - REDIS_URL=${REDIS_URL}
       - ONLYFANS_BASE_URL=${ONLYFANS_BASE_URL}
       - ONLYFANS_API_KEY=${ONLYFANS_API_KEY}
@@ -50,9 +50,6 @@ services:
     ports:
       - "4000:4000"
       - "5679:5679"
-    depends_on:
-      db:
-        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

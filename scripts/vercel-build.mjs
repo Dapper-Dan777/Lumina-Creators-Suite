@@ -9,13 +9,4 @@ function run(cmd) {
 }
 
 run("npm run db:generate");
-
-if (process.env.DATABASE_URL) {
-  run("npm run db:migrate");
-} else {
-  console.warn(
-    "\n⚠ DATABASE_URL fehlt auf Vercel — DB-Migration übersprungen. API antwortet erst nach Setzen der Variable.\n",
-  );
-}
-
 run("npm run build");
