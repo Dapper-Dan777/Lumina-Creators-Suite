@@ -37,6 +37,10 @@ dist-ssr
 # Capacitor Android (optional)
 android/
 
+# Tunnel binary (auto-downloaded)
+scripts/cloudflared
+scripts/.cloudflared.tgz
+
 # SQLite
 server/data/*.db
 server/data/*.db-journal

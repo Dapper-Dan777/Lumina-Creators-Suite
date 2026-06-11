@@ -32,14 +32,35 @@ npm run docker:dev
 4. Open on your Mac: http://localhost:8081/
    On your iPhone (same Wi‑Fi): http://<MAC_IP>:8081/ (find IP: `ipconfig getifaddr en0`).
 
-Optional: HTTPS / remote access
-- For easy secure remote access from your iPhone or anywhere, install ngrok and run:
+### Öffentliche HTTPS-URL ohne Vercel (kostenlos, empfohlen)
+
+Web + API laufen in Docker — **APIs funktionieren zuverlässig** (im Gegensatz zu Vercel Serverless).
 
 ```bash
-ngrok http 8081
+npm run public
 ```
 
-- Open the generated HTTPS URL on your iPhone. API requests are proxied automatically from the frontend to the backend at `/api`.
+Das startet Docker und einen **Cloudflare Tunnel**. Du bekommst eine URL wie:
+
+`https://abc-xyz.trycloudflare.com`
+
+In `.env` eintragen:
+
+```bash
+CAPACITOR_SERVER_URL=https://abc-xyz.trycloudflare.com
+```
+
+Dann TestFlight vorbereiten: `npm run mobile:prepare:release`
+
+**Hinweis:** Die `trycloudflare.com`-URL ändert sich nach jedem Tunnel-Neustart.
+
+**Feste kostenlose Subdomain (langfristig):**
+
+1. [duckdns.org](https://www.duckdns.org) — gratis Subdomain z. B. `lumina.duckdns.org`
+2. Oder [nic.eu.org](https://nic.eu.org) — gratis `lumina.eu.org` (Antrag dauert Wochen)
+3. Cloudflare Tunnel mit Account verbinden → stabile HTTPS-URL
+
+Optional (älter): ngrok — `ngrok http 8081`
 
 iPhone als App (2 Wege)
 
