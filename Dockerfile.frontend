@@ -3,7 +3,7 @@ WORKDIR /app
 ARG API_PROXY_TARGET=http://api:4000
 ENV API_PROXY_TARGET=$API_PROXY_TARGET
 COPY package.json package-lock.json ./
-RUN npm ci --silent
+RUN npm install --silent
 COPY . .
 RUN npm run build
 
