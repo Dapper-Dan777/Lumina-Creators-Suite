@@ -62,9 +62,13 @@ export default defineConfig({
   },
   nitro: {
     preset: nitroPreset,
-    routeRules: {
-      "/api/**": { proxy: `${apiProxyTarget}/api/**` },
-    },
+    // Vercel: /api wird zur Laufzeit in src/server.ts proxied (API_PROXY_TARGET Env-Var).
+    // Lokal/Docker: Nitro-Proxy zum Express-Backend.
+    ...(nitroPreset !== "vercel" && {
+      routeRules: {
+        "/api/**": { proxy: `${apiProxyTarget}/api/**` },
+      },
+    }),
   },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).

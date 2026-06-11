@@ -1,0 +1,36 @@
+# Backend deployen: https://dashboard.render.com → New → Blueprint → dieses Repo
+services:
+  - type: web
+    name: lumina-api
+    runtime: docker
+    rootDir: server
+    dockerfilePath: Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lumina-db
+          property: connectionString
+      - key: ONLYFANS_BASE_URL
+        value: https://app.onlyfansapi.com/api
+      - key: ONLYFANS_API_KEY
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: AI_MODEL
+        value: gpt-4o-mini
+      - key: SERPER_API_KEY
+        sync: false
+
+databases:
+  - name: lumina-db
+    plan: free
+    databaseName: lumina
+    user: lumina
